@@ -1,0 +1,744 @@
+
+import { LightningElement, track, wire, api } from 'lwc';
+import { getRecord,deleteRecord  } from 'lightning/uiRecordApi';
+import { NavigationMixin } from 'lightning/navigation';
+//import { refreshApex } from '@salesforce/apex';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import { CloseActionScreenEvent } from 'lightning/actions';
+//c/boatMapimport OpportunityLineItems from '@salesforce/schema/OpportunityLineItem'; 
+import getProducts from '@salesforce/apex/opportunityLineItemController.getProducts';
+import insertOppProduct from '@salesforce/apex/opportunityLineItemController.insertOppProduct';
+import updateOppProduct from '@salesforce/apex/opportunityLineItemController.updateOppProduct';
+import getOpportunityProducts from '@salesforce/apex/opportunityLineItemController.getOpportunityProducts';
+
+
+
+export default class OpportunityLineItem extends NavigationMixin(LightningElement) {
+
+    @api recordId;
+    @track opportunity = {};
+    @track keyindex = 0;
+    @track productsList = [];
+    @track getOpportunityProductsResult=[];
+    @track inputValue = {}
+    @track columnsHeader = [
+        {Name: "Opportunity Product Name",fieldApi:'Name',dataType:"text",class:"slds-truncate"},
+        {Name: "Product",fieldApi:'Product2Id',dataType:"search",class:"slds-truncate slds-text-color_error"},
+        {Name : "Quantity",fieldApi:'Quantity',dataType:"text",class:"slds-truncate slds-text-color_error"},
+        {Name: "Sales Price",fieldApi:'UnitPrice',dataType:"Currency",class:"slds-truncate slds-text-color_error"},
+        {Name : "Line Description",fieldApi:'Description', dataType:"text",class:"slds-truncate"},
+        //{Name : "Line Description 1",fieldApi:'Description', dataType:"text",class:"slds-truncate"},
+];
+    /*@track inputFields= [
+        {fieldApi:'Name',dataType:"text"},
+        {fieldApi:'UnitPrice',dataType:"Currency"},
+        {fieldApi:'Description',dataType:"text"},
+    ]*/
+    //@track OpportunityLineItems={};
+    spinnerFlag = false;
+    backspace = false;
+    @track required = {};
+    ProductDropDown = false;
+    Amount=0;
+    productChangeHandler = [];
+    productChangeUpdate = [];
+
+    
+
+    @track OpportunityProductList = [{
+        
+        'Name': '',
+        'Product2Id': '',
+        'Quantity': '',
+        'UnitPrice': '',
+        'Description': ''
+    }];
+    /*updateRecordView(recordId) {
+        updateRecord({fields: { Id: recordId }});
+    }*/
+
+    
+   
+    @wire(getRecord, { recordId: '$recordId', layoutTypes: ['Full'] })
+    getRecordResult({ data, error }) {
+        console.log('*************getRecordResult*******************');
+        if (data) {
+           // console.log("OLP :",JSON.stringify(OpportunityLineItems));
+            console.log("getRecord Result  :", JSON.stringify(data));
+            this.opportunity.Id = data.id;
+            this.opportunity.Name = data.fields.Name.value;
+            this.opportunity.CloseDate = data.fields.CloseDate.value;
+            //this.opportunity.Amount = data.fields.Amount.value;
+            //this.oldOpportunityAmount = data.fields.Amount.value;
+            this.opportunity.StageName = data.fields.StageName.value;
+            this.opportunity.Type = data.fields.Type.value;
+            this.opportunity.LeadSource = data.fields.LeadSource.value;
+            this.spinnerFlag=true;
+           
+        }
+        else if (error) {
+            console.log("getRecord Error :", error);
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Error!',
+                    message: 'Error on CustomMetadataRecordsResult',
+                    variant: 'error'
+                })
+            );
+        }
+       // return refreshApex(this.getOpportunityProductsResults);
+    }
+    /*@wire(getOpportunityProducts,{OppId : '$recordId'})
+    getOpportunityProductsResult({data,error}){
+        if(data){
+            console.log(" WIRE getOpportunityProductsResult :",JSON.stringify(data));
+            console.log(" WIRE getOpportunityProductsResult :",JSON.stringify(data.length));
+            this.getOpportunityProductsResults = data;
+        }
+        else if(error){
+           console.log("getOpportunityProductsResult :",error);
+        }
+        
+    }*/
+
+
+    addRow() {
+        console.log('*************addRow*******************');
+        this.keyindex + 1;
+        this.OpportunityProductList.push({
+            
+            'Name': '',
+            'Product2Id': '',
+            'Quantity': '',
+            'UnitPrice': '',
+            'Description': '',
+            'ProductLabel':''
+        })
+    }
+    removeRow(event) {
+        console.log('*************removeRow*******************');
+        console.log("remove row");
+        console.log("before :", JSON.stringify(this.OpportunityProductList));
+        this.OpportunityProductList.splice([event.target.id.split('-')[0]], 1);
+        console.log("before :", JSON.stringify(this.OpportunityProductList));
+    }
+    deleteRow(event){
+        console.log('*************deleteRow*******************');
+        console.log("Delete row :",event.target.id.split('-')[0]);
+       
+        var deletedindex = event.target.id.split('-')[0];
+        console.log("deleted row Id :",this.OpportunityProductList[event.target.id.split('-')[0]].Id);
+        console.log("deleted row product name :",this.OpportunityProductList[event.target.id.split('-')[0]].ProductLabel);
+        console.log("Opportunity ProductList  :",this.OpportunityProductList);
+        var deletedRecordId = this.OpportunityProductList[event.target.id.split('-')[0]].Id;
+        deleteRecord(this.OpportunityProductList[event.target.id.split('-')[0]].Id)
+        .then(() => {
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Success',
+                    message: 'Record deleted successfully',
+                    variant: 'success'
+                })
+            );
+            eval("$A.get('e.force:refreshView').fire();");
+            
+            console.log("Before splice deleted :",JSON.stringify(this.OpportunityProductList));
+            console.log("delete index :",deletedindex);
+            this.OpportunityProductList.splice(Number(deletedindex),1);
+            let AmountRes,i;
+            this.Amount=0;
+            for(i=0;i<this.OpportunityProductList.length;i++){
+                AmountRes=this.OpportunityProductList[i].Quantity * this.OpportunityProductList[i].UnitPrice;
+                this.Amount = this.Amount + AmountRes;
+            }
+            this.opportunity.Amount = this.Amount;
+           
+            console.log("After splice deleted :",JSON.stringify(this.OpportunityProductList));
+        })
+        .catch(error => {
+            console.log("error :", JSON.stringify(error));
+            if (error.body.output.errors != null && error.body.output.errors.length > 0) {
+              //  this.spinnerFlag = false;
+               // this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                for (let index = 0; index < error.body.output.errors.length; index++) {
+                    console.log('Displaying Errors', error);
+                    //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                    this.errorMessage = error.body.output.errors[index].message;
+                }
+            }
+            else if (error.body.output.fieldErrors != null) {
+                console.log('Displaying Field Errors', error);
+              
+                var fieldErrors = error.body.output.fieldErrors;
+                if (error.body.output.fieldErrors != null) {
+                    for (let index = 0; index < Object.keys(fieldErrors).length; index++) {
+                        var val = Object.values(fieldErrors);
+                        this.errorMessage = val[index][0]["message"];
+                    }
+                }
+            }
+            else {
+                console.log('Displaying Generic Errors', error)
+                this.errorMessage = error.body.message;
+            }
+            if (this.errorMessage != null) {
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title: 'Error!',
+                        message: this.errorMessage,
+                        variant: 'error'
+                    })
+                );
+            }
+        })       
+    }
+    handleInputChange(event) {
+        console.log('*************handleInputChange*******************');
+        console.log("Handle change value:", event.target.value);
+        console.log("Handle change index:", event.target.id.split('-')[0]);
+        console.log("OpportunityProductList:",JSON.stringify(this.OpportunityProductList));
+        this.isInputChanged = true;
+        if(event.target.name == 'Quantity'){
+            this.OpportunityProductList[event.target.id.split('-')[0]].Quantity =event.target.value;
+        }
+        else if(event.target.name == 'UnitPrice'){
+            this.OpportunityProductList[event.target.id.split('-')[0]].UnitPrice =event.target.value;
+        }
+        else if(event.target.name == 'Product2Id'){
+            console.log("Access key in product  :",event.target.accessKey);
+            this.OpportunityProductList[event.target.id.split('-')[0]].ProductLabel =event.target.accessKey;  
+        }
+        let AmountRes1,j;
+        this.Amount=0;
+        for(j=0;j<this.OpportunityProductList.length;j++){
+            AmountRes1=this.OpportunityProductList[j].Quantity * this.OpportunityProductList[j].UnitPrice;
+            this.Amount = this.Amount + AmountRes1;
+        }
+        this.opportunity.Amount = this.Amount;
+       
+        if (event.target.name != 'Product2Id') {
+            this.OpportunityProductList[event.target.id.split('-')[0]][event.target.name] = event.target.value;
+            console.log("Product Change handler :",JSON.stringify(this.OpportunityProductList[event.target.id.split('-')[0]]));
+        }
+        console.log("Handle change :", JSON.stringify(this.OpportunityProductList[event.target.id.split('-')[0]]));
+        
+        
+         if (event.target.name == 'Product2Id') {
+            if(this.productsList.length == 0 || Object.values(event.target.value) == ""){
+                console.log("Product list is empty :");
+                this.productsList = this.totalProductList;
+            }
+            
+            //this.ProductDropDown = true;
+            let result=[];
+            for(var i=0;i<event.target.value.length;i++){
+                result = this.totalProductList.filter(res=> res.Name[i] == event.target.value[i]);      
+            }
+            if(result.length > 0){
+                this.productsList = result;
+            }   
+            console.log("result filter :",JSON.stringify(result));
+        }
+    }
+    handlemouseleftclicked(event){
+        console.log('*************handlemouseleftclicked*******************');
+        console.log("mouse left clicked :");
+        this.OpportunityProductList[event.target.id.split('-')[0]].dropDown = true;
+        
+    }
+    handleKeyPress(event) {
+        console.log('*************handleKeyPress*******************');
+        console.log("OnkeyPress", event.target.value);
+        if (event.which === 8 || event.which === 'Backspace' || event.keyCode === 8 || event.keyCode === 'Backspace' || event.charCode === 8 || event.charCode === 'Backspace') {
+            console.log("BACKSPACE");
+            this.backspace = true;
+        }
+        else {
+            console.log("NON BACKSPACE");
+            this.backspace = false;
+        }
+    }
+    handleProductDropDown(event) {
+        console.log('*************handleProductDropDown*******************');
+        console.log("Selected product:", event.target.name);
+        console.log("access key :",event.target.accessKey);
+        this.OpportunityProductList[event.target.id.split('-')[0]]["ProductLabel"] = event.target.accessKey;
+        this.OpportunityProductList[event.target.id.split('-')[0]]["Product2Id"] = event.target.name;
+       // console.log("before dropdown",this.OpportunityProductList[event.target.id.split('-')[0]].dropDown);
+        this.OpportunityProductList[event.target.id.split('-')[0]].dropDown = false;
+    }
+    
+    createOpportunityProducts() {
+        console.log("*******createOpportunityProducts************");
+        this.isInputChanged=false;
+        this.productChangeHandler=[];
+        this.productChangeUpdate=[];
+        let dummyinsertParams=[];
+        let dummyupdateParams=[];
+        this.isRequiredFieldEmpty = false;
+        for(let i=0;i<this.OpportunityProductList.length;i++){
+            if(!this.OpportunityProductList[i].Id){
+                this.OpportunityProductList[i]['OpportunityId'] = this.recordId;
+                dummyinsertParams.push(this.OpportunityProductList[i]);
+                this.isInsertHas = true;
+            }
+            else if(this.OpportunityProductList[i].Id){
+                dummyupdateParams.push(this.OpportunityProductList[i]);
+                this.isUpdateHas = true;
+            }
+        }
+       /*let dummyupdateParams=[];
+        for(let i=0;i<this.OpportunityProductList.length;i++){
+            if(!this.OpportunityProductList[i].Id){
+                this.OpportunityProductList[i]['OpportunityId'] = this.recordId;
+                dummyinsertParams.push(this.OpportunityProductList[i]);
+                this.isInsertHas = true;
+            }
+            else{
+                dummyupdateParams.push(this.OpportunityProductList[i]);
+                this.isUpdateHas = true;
+            }
+        }
+        if( this.isInsertHas == true){
+            let insertedOppProducts=[];
+            insertOppProduct({ opportunityProducts : JSON.stringify(dummyinsertParams) })
+            .then(result => {
+                console.log("Result :", JSON.stringify(result));
+                insertedOppProducts = result;
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title: 'SUCCESS',
+                        message: 'Opportunity Products Created Successfully',
+                        variant: 'success'
+                    })     
+                );
+                
+                for(let i=0;i<insertedOppProducts.length;i++){
+                    for(let j=0;i<this.OpportunityProductList.length;j++){
+                        if(!this.OpportunityProductList[j].Id){
+                            this.OpportunityProductList[j].Id=insertedOppProducts[i].Id;
+                            break;
+                        }        
+                    }
+                }
+               // this.OpportunityProductList = this.OpportunityProductList;
+                eval("$A.get('e.force:refreshView').fire();");
+               // this.updateRecordView(this.recordId);
+                let AmountRes,i;
+                this.Amount=0;
+                for(i=0;i<this.OpportunityProductList.length;i++){
+                    AmountRes=this.OpportunityProductList[i].Quantity * this.OpportunityProductList[i].UnitPrice;
+                    this.Amount = this.Amount + AmountRes;
+                }
+                this.opportunity.Amount = this.Amount;
+                eval("$A.get('e.force:refreshView').fire();");
+               // this.productChangeHandler={};
+                //this.isSavedEmpty=true;
+                this.isInputChanged=false;
+                //this.OpportunityProductList[this.lastModifiedfield]['readonly']=true;
+                
+                if(this.closeActionFlag == true){
+                    this.dispatchEvent(new CloseActionScreenEvent());
+                }
+            })
+            .catch(error => {
+                console.log("error :", JSON.stringify(error));
+                if (error.body.output.errors != null && error.body.output.errors.length > 0) {
+                  //  this.spinnerFlag = false;
+                   // this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                    for (let index = 0; index < error.body.output.errors.length; index++) {
+                        console.log('Displaying Errors', error);
+                        //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                        this.errorMessage = error.body.output.errors[index].message;
+                    }
+                }
+                else if (error.body.output.fieldErrors != null) {
+                    console.log('Displaying Field Errors', error);
+                    //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                    var fieldErrors = error.body.output.fieldErrors;
+                    if (error.body.output.fieldErrors != null) {
+                        for (let index = 0; index < Object.keys(fieldErrors).length; index++) {
+                            var val = Object.values(fieldErrors);
+                            this.errorMessage = val[index][0]["message"];
+                        }
+                    }
+                }
+                else {
+                    console.log('Displaying Generic Errors', error)
+                    //this.errorMessage = error.body.message;
+                }
+                if (this.errorMessage != null) {
+                    this.dispatchEvent(
+                        new ShowToastEvent({
+                            title: 'Error!',
+                            message: this.errorMessage,
+                            variant: 'error'
+                        })
+                    );
+                }
+            })
+
+        }
+        else if(this.isUpdateHas == true){
+            updateOppProduct({ opportunityProducts : JSON.stringify(this.productChangeUpdate)})
+          .then(result => {
+        console.log("updated Result :", JSON.stringify(result));
+        eval("$A.get('e.force:refreshView').fire();");
+       // this.updateRecordView(this.recordId);
+        let AmountRes,i;
+        this.Amount=0;
+        for(i=0;i<this.OpportunityProductList.length;i++){
+            AmountRes=this.OpportunityProductList[i].Quantity * this.OpportunityProductList[i].UnitPrice;
+            this.Amount = this.Amount + AmountRes;
+        }
+        this.opportunity.Amount = this.Amount;
+        eval("$A.get('e.force:refreshView').fire();");
+        this.isInputChanged=false;
+        if(this.closeActionFlag == true){
+            this.dispatchEvent(new CloseActionScreenEvent());
+        }
+    })
+    .catch(error => {
+        console.log("error :", JSON.stringify(error));
+        if (error.body.output.errors != null && error.body.output.errors.length > 0) {
+          //  this.spinnerFlag = false;
+           // this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+            for (let index = 0; index < error.body.output.errors.length; index++) {
+                console.log('Displaying Errors', error);
+                //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                this.errorMessage = error.body.output.errors[index].message;
+            }
+        }
+        else if (error.body.output.fieldErrors != null) {
+            console.log('Displaying Field Errors', error);
+            //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+            var fieldErrors = error.body.output.fieldErrors;
+            if (error.body.output.fieldErrors != null) {
+                for (let index = 0; index < Object.keys(fieldErrors).length; index++) {
+                    var val = Object.values(fieldErrors);
+                    this.errorMessage = val[index][0]["message"];
+                }
+            }
+        }
+        else {
+            console.log('Displaying Generic Errors', error)
+            this.errorMessage = error.body.message;
+        }
+        if (this.errorMessage != null) {
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Error!',
+                    message: this.errorMessage,
+                    variant: 'error'
+                })
+            );
+        }
+    })  
+            
+        }*/
+        
+        for(let i=0;i<this.OpportunityProductList.length;i++){
+           // if(!this.OpportunityProductList[i].Id){
+                //////////////////////////INSERT LOGIC START//////////////////////////////
+        if(Object.keys(this.OpportunityProductList[i]).filter(result=> result === "Product2Id").length == 0 || Object.keys(this.OpportunityProductList[i]).filter(result=> result === "UnitPrice").length == 0 || Object.keys(this.OpportunityProductList[i]).filter(result=> result === "Quantity").length == 0 || this.OpportunityProductList[i].Quantity == '' || this.OpportunityProductList[i].Product2Id == '' || this.OpportunityProductList[i].UnitPrice ==''){
+            if(Object.keys(this.OpportunityProductList[i]).filter(result=> result === "Product2Id").length == 0 || this.OpportunityProductList[i].Product2Id == ''){
+               console.log("product is empty",i);
+               this.isRequiredFieldEmpty = true;
+               this.dispatchEvent(
+                new ShowToastEvent({
+                    title:'',
+                    message: 'Please complete the product fields',
+                    variant: 'error'
+                })
+            );
+               
+            }
+           if(Object.keys(this.OpportunityProductList[i]).filter(result=> result === "UnitPrice").length == 0|| this.OpportunityProductList[i].UnitPrice ==''){
+                console.log("UnitPrice is empty",i);
+                this.isRequiredFieldEmpty = true;
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title:'',
+                        message: 'Please complete the UnitPrice fields',
+                        variant: 'error'
+                    })
+                );
+              
+            }
+            if(Object.keys(this.OpportunityProductList[i]).filter(result=> result === "Quantity").length == 0 || this.OpportunityProductList[i].Quantity == '' ){
+                console.log("Quantity is empty",i);
+                this.isRequiredFieldEmpty = true;
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title:'',
+                        message: 'Please complete the Quantity fields',
+                        variant: 'error'
+                    })
+                );
+               
+            }
+        }
+        else{
+           // console.log("else");
+            //console.log("Params passing to Apex INSERT :",JSON.stringify(dummyinsertParams));
+            //console.log("params passing to Apex OppProductList :",JSON.stringify(this.OpportunityProductList));
+            
+     
+        } 
+    }  
+//}
+//////////////////////////INSERT LOGIC OVER//////////////////////////////
+//else{
+////////////////////////////UPDATE LOGIC START/////////////////////////////
+if(this.isUpdateHas == true &&  this.isRequiredFieldEmpty == false){
+    //this.dummyupdateParams.push(this.OpportunityProductList[i]);
+    //delete this.productChangeUpdate[i].ProductLabel;
+    console.log("Params passing to Apex UPDATE :",JSON.stringify(dummyupdateParams));
+    updateOppProduct({ opportunityProducts : JSON.stringify(dummyupdateParams)})
+    .then(result => {
+        console.log("Updated Result :", JSON.stringify(result));
+        eval("$A.get('e.force:refreshView').fire();");
+       // this.updateRecordView(this.recordId);
+        let AmountRes,i;
+        this.Amount=0;
+        for(i=0;i<this.OpportunityProductList.length;i++){
+            AmountRes=this.OpportunityProductList[i].Quantity * this.OpportunityProductList[i].UnitPrice;
+            this.Amount = this.Amount + AmountRes;
+        }
+        this.opportunity.Amount = this.Amount;
+        eval("$A.get('e.force:refreshView').fire();");
+        this.isInputChanged=false;
+        if(this.closeActionFlag == true){
+            this.dispatchEvent(new CloseActionScreenEvent());
+        }
+    })
+    .catch(error => {
+        console.log("error :", JSON.stringify(error));
+        if (error.body.output.errors != null && error.body.output.errors.length > 0) {
+          //  this.spinnerFlag = false;
+           // this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+            for (let index = 0; index < error.body.output.errors.length; index++) {
+                console.log('Displaying Errors', error);
+                //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                this.errorMessage = error.body.output.errors[index].message;
+            }
+        }
+        else if (error.body.output.fieldErrors != null) {
+            console.log('Displaying Field Errors', error);
+            //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+            var fieldErrors = error.body.output.fieldErrors;
+            if (error.body.output.fieldErrors != null) {
+                for (let index = 0; index < Object.keys(fieldErrors).length; index++) {
+                    var val = Object.values(fieldErrors);
+                    this.errorMessage = val[index][0]["message"];
+                }
+            }
+        }
+        else {
+            console.log('Displaying Generic Errors', error)
+            this.errorMessage = error.body.message;
+        }
+        if (this.errorMessage != null) {
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Error!',
+                    message: this.errorMessage,
+                    variant: 'error'
+                })
+            );
+        }
+    })
+}   
+//}    
+//}
+if(this.isInsertHas == true && this.isRequiredFieldEmpty == false){
+    let insertedOppProducts=[];
+    console.log("Params passing to Apex INSERT :",JSON.stringify(dummyinsertParams));
+
+            insertOppProduct({ opportunityProducts : JSON.stringify(dummyinsertParams) })
+            .then(result => {
+                console.log("Inserted Result :", JSON.stringify(result));
+                insertedOppProducts = result;
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title: 'SUCCESS',
+                        message: 'Opportunity Products Created Successfully',
+                        variant: 'success'
+                    })     
+                );
+                
+                for(let i=0;i<insertedOppProducts.length;i++){
+                    for(let j=0;i<this.OpportunityProductList.length;j++){
+                        if(!this.OpportunityProductList[j].Id){
+                            this.OpportunityProductList[j].Id=insertedOppProducts[i].Id;
+                            break;
+                        }        
+                    }
+                }
+               // this.OpportunityProductList = this.OpportunityProductList;
+                eval("$A.get('e.force:refreshView').fire();");
+               // this.updateRecordView(this.recordId);
+                let AmountRes,i;
+                this.Amount=0;
+                for(i=0;i<this.OpportunityProductList.length;i++){
+                    AmountRes=this.OpportunityProductList[i].Quantity * this.OpportunityProductList[i].UnitPrice;
+                    this.Amount = this.Amount + AmountRes;
+                }
+                this.opportunity.Amount = this.Amount;
+                eval("$A.get('e.force:refreshView').fire();");
+               // this.productChangeHandler={};
+                //this.isSavedEmpty=true;
+                this.isInputChanged=false;
+                //this.OpportunityProductList[this.lastModifiedfield]['readonly']=true;
+                
+                if(this.closeActionFlag == true){
+                    this.dispatchEvent(new CloseActionScreenEvent());
+                }
+            })
+            .catch(error => {
+                console.log("error :", JSON.stringify(error));
+                if (error.body.output.errors != null && error.body.output.errors.length > 0) {
+                  //  this.spinnerFlag = false;
+                   // this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                    for (let index = 0; index < error.body.output.errors.length; index++) {
+                        console.log('Displaying Errors', error);
+                        //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                        this.errorMessage = error.body.output.errors[index].message;
+                    }
+                }
+                else if (error.body.output.fieldErrors != null) {
+                    console.log('Displaying Field Errors', error);
+                    //this.template.querySelector(`[data-id='${this.status}']`).className = "slds-path__item slds-is-incomplete";
+                    var fieldErrors = error.body.output.fieldErrors;
+                    if (error.body.output.fieldErrors != null) {
+                        for (let index = 0; index < Object.keys(fieldErrors).length; index++) {
+                            var val = Object.values(fieldErrors);
+                            this.errorMessage = val[index][0]["message"];
+                        }
+                    }
+                }
+                else {
+                    console.log('Displaying Generic Errors', error)
+                    //this.errorMessage = error.body.message;
+                }
+                if (this.errorMessage != null) {
+                    this.dispatchEvent(
+                        new ShowToastEvent({
+                            title: 'Error!',
+                            message: this.errorMessage,
+                            variant: 'error'
+                        })
+                    );
+                }
+            })
+}
+eval("$A.get('e.force:refreshView').fire();");
+//console.log('OpportunityProductList :',JSON.stringify(this.OpportunityProductList));   
+    }
+    SaveHandler() {
+        console.log("*******SaveHandler************");
+        if(this.isInputChanged == true){
+          this.createOpportunityProducts();
+        }  
+    }
+    SaveAndCloseHandler() {
+        console.log("*******SaveAndCloseHandler************");
+        if(this.isInputChanged == true){
+            this.createOpportunityProducts();
+            this.closeActionFlag=true;
+          }
+     
+       
+    }
+    connectedCallback() {
+        console.log("*******connectedCallback************");
+        
+        getProducts()
+            .then(result => {
+                this.productsList = result;
+                this.totalProductList = result;
+                console.log("Get product result :", result);
+            })
+            .catch(error => {
+                console.log("get product result :", error);
+
+            }) 
+           
+           
+    }
+    renderedCallback(){
+        console.log("*******renderedCallBack************");
+        /*getOpportunityProducts({ OppId : this.recordId})
+               .then(result=>{
+                console.log(" rendered getOpportunityProductsResult :",JSON.stringify(result));
+                console.log(" rendered getOpportunityProductsResult :",JSON.stringify(result.length));
+               })
+               .catch(error => {
+               console.log("getOpportunityProducts Error:",error);
+            }) */
+           
+        if(this.loaded){
+            return ;
+            
+        } 
+        getOpportunityProducts({ OppId : this.recordId})
+        .then(result => {
+            console.log("get Opportunity Products :",JSON.stringify(result));
+            console.log("get Opportunity Products length:",JSON.stringify(result.length));
+            console.log("Opportunity Products List :",JSON.stringify(this.OpportunityProductList));
+           
+            //this.getOpportunityProductsResult = result;
+           let AmountRes;
+            
+            for(let i=0;i<result.length-1;i++){
+               
+                this.OpportunityProductList.push({    
+                    'Name': '',
+                    'Product2Id': '',
+                    'Quantity': '',
+                    'UnitPrice': '',
+                    'Description': '',
+                    'ProductLabel':''
+                })
+            }
+            for(let i=0;i<result.length;i++){
+               
+                this.OpportunityProductList[i]['Id']=result[i].Id;
+                this.OpportunityProductList[i]['Name']=result[i].Name;
+                this.OpportunityProductList[i]['ProductLabel']=result[i].Product2.Name;
+                this.OpportunityProductList[i]['Product2Id']=result[i].Product2Id;
+                this.OpportunityProductList[i]['Quantity']=result[i].Quantity;
+                this.OpportunityProductList[i]['UnitPrice']=result[i].UnitPrice;
+                this.OpportunityProductList[i]['Description']=result[i].Description;
+                AmountRes=result[i].Quantity * result[i].UnitPrice;
+                this.Amount = this.Amount + AmountRes;
+
+            }
+            this.opportunity.Amount=this.Amount;
+            console.log("After Opportunity Products List :",JSON.stringify(this.OpportunityProductList));
+          
+            this.loaded=true;  
+        })
+        .catch(error => {
+            console.log("get Opportunity product  :", error);
+
+        })
+        
+       
+    }
+   
+   
+    
+}
+
+  /*connectedCallback(){ 
+        console.log("Connnected call back");
+        this[NavigationMixin.Navigate]({
+            type: 'standard__navItemPage',
+            attributes: {
+                apiName: 'OpportunityProducts'
+            },
+        });
+        this.spinnerFlag=true;
+        
+    }*/
